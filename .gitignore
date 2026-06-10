@@ -1,0 +1,6 @@
+*.egg/
+
+site/
+
+*.db*
+*.sqlite*
