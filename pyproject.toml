@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "centaurodb"
-version = "0.9.0rc2"
+version = "0.9.0"
 description = "Pydantic-native storage for time-series and evolving data models. SQLite + PostgreSQL, schema evolution without migrations, built-in Polars."
 readme = "README.md"
 license = "MIT"

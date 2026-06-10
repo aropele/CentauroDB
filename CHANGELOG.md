@@ -9,7 +9,7 @@ out explicitly in the release notes below.
 
 ## [Unreleased]
 
-## [0.9.0] — 2026-05-11
+## [0.9.0] — 2026-06-10
 
 First public release on PyPI. Beta status: the SQLite path is ready for
 real workloads (data pipelines, ingestion, time-series with metadata,
