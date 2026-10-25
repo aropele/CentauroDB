@@ -9,6 +9,15 @@ out explicitly in the release notes below.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-10-25
+
+### Added
+
+- **libSQL backend.** `LibSQLEngine` opens remote `libsql://` URLs
+  and local libSQL files through `register_backend`. It ships behind the
+  new `libsql` extra (`pip install centaurodb[libsql]`). The auth token is
+  an engine keyword (`auth_token=`) and is never read from the environment.
+
 ## [0.9.0] — 2026-06-10
 
 First public release on PyPI. Beta status: the SQLite path is ready for
@@ -110,5 +119,6 @@ placeholder so that the chronology in this file matches the public
 release history. The only behaviour change relative to that snapshot
 is the `parent_ref` default — see *Changed* above.
 
-[Unreleased]: https://github.com/aropele/centaurodb/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/aropele/centaurodb/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/aropele/centaurodb/releases/tag/v0.10.0
 [0.9.0]: https://github.com/aropele/centaurodb/releases/tag/v0.9.0

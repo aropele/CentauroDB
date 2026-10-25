@@ -37,10 +37,17 @@ class SampleModelSeries(CentauroModelSeries):
     unit: str = ""
 
 
-@pytest.fixture
-def conn():
-    with Engine() as c:
-        yield c
+@pytest.fixture(params=["sqlite", "libsql"])
+def conn(request, tmp_path):
+    if request.param == "sqlite":
+        with Engine() as c:
+            yield c
+    else:
+        pytest.importorskip("libsql")
+        from centaurodb.engine import LibSQLEngine
+
+        with LibSQLEngine(str(tmp_path / "conn.db")) as c:
+            yield c
 
 
 def get_tables(conn: Engine) -> list[str]:

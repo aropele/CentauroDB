@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from datetime import date, datetime
 from collections.abc import Iterable
 from typing import Any, Literal, Protocol, cast, runtime_checkable
 
@@ -384,8 +385,145 @@ class PostgresEngine(Engine):
         self._conn.close()
 
 
+def _libsql_param(v):
+    """libsql rejects datetime/date; mirror sqlite3's default adapters."""
+    if isinstance(v, datetime):
+        return v.isoformat(" ")
+    if isinstance(v, date):
+        return v.isoformat()
+    return v
+
+
+def _libsql_params(params):
+    return tuple(_libsql_param(v) for v in params)
+
+
+class _LibSQLRow(tuple):
+    """Tuple row that also resolves column names, like ``sqlite3.Row``."""
+
+    _names: tuple[str, ...]
+
+    def __new__(cls, values, names):
+        row = super().__new__(cls, values)
+        row._names = tuple(names)
+        return row
+
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            try:
+                return tuple.__getitem__(self, self._names.index(key))
+            except ValueError:
+                raise IndexError("No item with that key") from None
+        return tuple.__getitem__(self, key)
+
+    def __getnewargs__(self):
+        return (tuple(self), self._names)
+
+    def keys(self) -> list[str]:
+        return list(self._names)
+
+
+class _LibSQLCursor:
+    """Wraps a libsql cursor so fetched rows are ``_LibSQLRow``."""
+
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+
+    @property
+    def lastrowid(self):
+        return self._cursor.lastrowid
+
+    def _names(self) -> list[str]:
+        return [d[0] for d in self._cursor.description or ()]
+
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        return None if row is None else _LibSQLRow(row, self._names())
+
+    def fetchall(self) -> list[Any]:
+        names = self._names()
+        return [_LibSQLRow(r, names) for r in self._cursor.fetchall()]
+
+
+class LibSQLEngine(Engine):
+    """libSQL backend via the ``libsql`` package.
+
+    A plain path opens a local file with the SQLite setup; a ``libsql://``
+    URL opens a remote database and skips file-only pragmas (WAL).
+    """
+
+    def __init__(self, url: str = ":memory:", *, auth_token: str | None = None):
+        try:
+            import libsql  # pyright: ignore[reportMissingImports]
+        except ImportError:
+            raise ImportError(
+                "libsql is required for libSQL support. "
+                "Install it with: pip install centaurodb[libsql]"
+            )
+        self.dialect = SQLiteDialect()
+        self._check_same_thread = True
+        connect = cast(Any, libsql).connect
+        if auth_token:
+            self._conn = connect(url, auth_token=auth_token)
+        else:
+            self._conn = connect(url)
+        if "://" in url:
+            self._conn.execute("PRAGMA foreign_keys=ON")
+        else:
+            for stmt in self.dialect.setup_statements(url):
+                self._conn.execute(stmt)
+
+    @property
+    def raw(self):
+        """Return the underlying libsql connection."""
+        return self._conn
+
+    @property
+    def async_safety(self) -> AsyncSafety:
+        return "unsafe"
+
+    def execute(self, sql: str, params: tuple = ()):
+        return _LibSQLCursor(self._conn.execute(sql, _libsql_params(params)))
+
+    def executemany(self, sql: str, params_seq):
+        return _LibSQLCursor(
+            self._conn.executemany(sql, [_libsql_params(p) for p in params_seq])
+        )
+
+    def fetchone(self, sql: str, params: tuple = ()) -> RowProtocol | None:
+        return self.execute(sql, params).fetchone()
+
+    def fetchall(self, sql: str, params: tuple = ()) -> list[RowProtocol]:
+        return self.execute(sql, params).fetchall()
+
+    def insert_returning_id(self, sql: str, params: tuple = ()) -> int:
+        cursor = self._conn.execute(sql, _libsql_params(params))
+        assert cursor.lastrowid is not None
+        return cursor.lastrowid
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def _rows_to_dataframe(self, rows: list, pl):
+        if not rows:
+            return pl.DataFrame()
+        keys = rows[0].keys()
+        return pl.DataFrame([dict(zip(keys, row)) for row in rows])
+
+    def close(self):
+        self._conn.close()
+
+
 # Built-in backend registrations. Custom backends call register_backend()
 # at import time to plug into the same dispatch.
 register_backend("postgresql", PostgresEngine)
 register_backend("postgres", PostgresEngine)
 register_backend("sqlite", SQLiteEngine)
+register_backend("libsql", LibSQLEngine)
